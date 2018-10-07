@@ -139,16 +139,22 @@ class AntiDDOS {
 	</style>
 	</head>
 <body>
-	
+	<h1>Список IP адресов, делающих запросы быстрее чем раз в '.self::BotDelay .' сек. </h1>
 	<table>
-		<h1>Список IP адресов, делающих запросы быстрее чем раз в '.self::BotDelay .' сек. </h1>
-		<tr><th>IP адрес</th><th>Количество запросов</th></tr>';
+		<tr>
+			<th>IP адрес</th>
+			<th>Количество запросов</th>
+		</tr>';
 		arsort($ip);
 		foreach($ip as $ipa => $count) {
-			echo '<tr><td>' . $ipa . '</td><td>'. $count . '</td></tr>';
+			echo '
+			<tr>
+				<td>' . $ipa . '</td>
+				<td>' . $count . '</td>
+			</tr>';
 		}
 		echo '
-</table>
+	</table>
 </body>
 </html>';
 		exit;
