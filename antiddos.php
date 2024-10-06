@@ -23,19 +23,7 @@ declare(strict_types=1);
  */
 class AntiDDOS
 {
-    /**
-     * Время задержки в секундах, после которого можно снова обращаться к сайту,
-     * иначе это атакующий бот.
-     */
-    public const BOT_DELAY = 2;
-
-    /**
-     * Путь к папке с временными файлами (используется только для файлового кэша).
-     * если оставить null то возмется стандартный TMP 
-     */
-    public const TEMP_DIR = null; // Путь к папке с временными файлами. Должен существовать.
-
-    /**
+     /**
      * Список юзер-агентов роботов (закомментируйте, чтобы не делать исключений).
      * Если атака мягкая, то лучше не запрещать обход сайта поисковым роботам.
      * Очень не хорошо, если поисковый робот будет натыкаться на ошибки на сайте. 
@@ -43,7 +31,7 @@ class AntiDDOS
      * Поэтому пишем список юзер-агентов роботов; добавляем или
      * удаляем, что нужно. Если хотите не делать исключение, закоментируйте содержимое массива.
      */
-    public const USER_AGENT = [
+        public const USER_AGENT = [
         'OpenAIbot',
         'YandexBot',
         'Bingbot',
@@ -79,27 +67,41 @@ class AntiDDOS
     private $cache; // Кэш (файл, Redis, Memcached)
     private string $cacheType; // Тип кэша: 'redis', 'memcached', 'file'
     private string $errorLog = ''; // Переменная для хранения ошибок
+	
+    /**
+     * Время задержки в секундах, после которого можно снова обращаться к сайту,
+     * иначе это атакующий бот.
+     */
+    private int $botDelay = 2; // Время задержки в секундах (по умолчанию 2)
+    /**
+     * Путь к папке с временными файлами (используется только для файлового кэша).
+     * если оставить null то возмется стандартный TMP 
+     */	
+    private string $tempDir; // Путь к папке с временными файлами
 
     /**
      * Конструктор класса.
      *
      * @param string $cacheType Тип кэша ('redis', 'memcached', 'file' - по умолчанию).
+     * @param string $tempDir   Путь к папке с временными файлами (по умолчанию sys_get_temp_dir()).
      *
-     * @throws Exception Если папка TEMP_DIR не существует (для файлового кэша).
      * @throws Exception Если передан некорректный тип кэша.
      */
-    public function __construct(string $cacheType = 'file')
+    public function __construct(string $cacheType = 'file', string $tempDir = null)
     {
-        // Инициализация TEMP_DIR, если не указана явно (для файлового кэша)
-        if (self::TEMP_DIR === null) {
-            self::TEMP_DIR = sys_get_temp_dir();
-        }
-
-        if (!is_dir(self::TEMP_DIR)) {
-            throw new Exception("Папка " . self::TEMP_DIR . " не существует.");
-        }
-
         $this->cacheType = $cacheType;
+
+        if ($tempDir === null) {
+            $this->tempDir = sys_get_temp_dir();
+        } else {
+            $this->tempDir = $tempDir;
+        }
+
+        // Проверка существования папки для временных файлов
+        if (!is_dir($this->tempDir)) {
+            $this->errorLog .= "Папка " . $this->tempDir . " не существует.\n";
+            // throw new Exception("Папка " . $this->tempDir . " не существует.");
+        }
 
         // Настройка кэша по приоритетам и типу
         $this->initCache();
@@ -158,7 +160,7 @@ class AntiDDOS
         // 3. Используем файловый кэш по умолчанию или если указан тип 'file'
         if ($this->cacheType === 'file' || $this->cacheType !== 'redis' && $this->cacheType !== 'memcached') {
             $this->cache = new stdClass();
-            $this->cache->cacheDir = self::TEMP_DIR;
+            $this->cache->cacheDir = $this->tempDir;
             $this->errorLog .= "Файловый кэш инициализирован.\n";
         } else {
             // Заменяем throw на запись в лог
@@ -212,11 +214,11 @@ class AntiDDOS
     private function cleanUpOldFiles(): void
     {
         if (get_class($this->cache) === 'stdClass') {
-            $forbid = time() - self::BOT_DELAY;
-            $dir = opendir(self::TEMP_DIR) or die('Отсутствует директория для временных файлов AntiDDOS');
+            $forbid = time() - $this->botDelay;
+            $dir = opendir($this->tempDir) or die('Отсутствует директория для временных файлов AntiDDOS');
             while (false !== ($file = readdir($dir))) {
-                if (strpos($file, '.ddos') > 0 && filemtime(self::TEMP_DIR . '/' . $file) < $forbid) {
-                    unlink(self::TEMP_DIR . '/' . $file);
+                if (strpos($file, '.ddos') > 0 && filemtime($this->tempDir . '/' . $file) < $forbid) {
+                    unlink($this->tempDir . '/' . $file);
                 }
             }
             closedir($dir);
@@ -235,7 +237,7 @@ class AntiDDOS
     {
         // Проверяем время последнего обращения в кэше
         $lastRequest = $this->get("antiddos:last_request:{$ip}");
-        if ($lastRequest !== null && $time - (int)$lastRequest < self::BOT_DELAY) {
+        if ($lastRequest !== null && $time - (int)$lastRequest < $this->botDelay) {
             return true; // Атака
         }
 
@@ -262,7 +264,7 @@ class AntiDDOS
     {
         header('HTTP/1.0 503 Service Unavailable');
         header('Status: 503 Service Unavailable');
-        header('Retry-After: ' . (self::BOT_DELAY * 2));
+        header('Retry-After: ' . ($this->botDelay * 2));
         echo '
 <!DOCTYPE html>
 <html>
@@ -274,7 +276,7 @@ class AntiDDOS
 	<h1>Ошибка 503 (Service Unavailable)</h1>
 	<p>
 		Сервер не может в данный момент выдать запрашиваемую Вами страницу. <br/>
-		Попробуйте вызвать эту страницу позже, через ' . (self::BOT_DELAY * 2) . ' сек. (клавиша F5).
+		Попробуйте вызвать эту страницу позже, через ' . ($this->botDelay * 2) . ' сек. (клавиша F5).
 	</p>
 </body>
 </html>';
@@ -285,6 +287,8 @@ class AntiDDOS
      */
     public function monitor(): void
     {
+        $startTime = microtime(true); // Замеряем время начала выполнения скрипта
+
         echo '
 <!DOCTYPE html>
 <html>
@@ -300,7 +304,7 @@ class AntiDDOS
 	</style>
 	</head>
 <body>
-	<h1>Список IP адресов, делающих запросы быстрее чем раз в ' . self::BOT_DELAY . ' сек. </h1>
+	<h1>Список IP адресов, делающих запросы быстрее чем раз в ' . $this->botDelay . ' сек. </h1>
 	<table>
 		<tr>
 			<th>IP адрес</th>
@@ -308,22 +312,37 @@ class AntiDDOS
 		</tr>';
 
         if (get_class($this->cache) === 'stdClass') {
-            $dir = opendir(self::TEMP_DIR) or die('Отсутствует директория для временных файлов AntiDDOS');
-            $ip = [];
-            while (false !== ($file = readdir($dir))) {
-                if (strpos($file, '.ddos') > 0) {
-                    $ip[str_replace('.ddos', '', $file)] = (int)@file_get_contents(self::TEMP_DIR . '/' . $file);
-                }
-            }
-            closedir($dir);
+            // Обработка ошибок при чтении файлов
+            if (!is_dir($this->tempDir)) {
+                $this->errorLog .= "Отсутствует директория для временных файлов AntiDDOS\n";
+            } else {
+                $dir = opendir($this->tempDir);
+                if ($dir === false) {
+                    $this->errorLog .= "Ошибка открытия директории " . $this->tempDir . "\n";
+                } else {
+                    $ip = [];
+                    while (false !== ($file = readdir($dir))) {
+                        if (strpos($file, '.ddos') > 0) {
+                            // Обработка ошибок при чтении файла
+                            $count = (int)@file_get_contents($this->tempDir . '/' . $file);
+                            if ($count === false) {
+                                $this->errorLog .= "Ошибка чтения файла {$this->tempDir}/{$file}\n";
+                            } else {
+                                $ip[str_replace('.ddos', '', $file)] = $count;
+                            }
+                        }
+                    }
+                    closedir($dir);
 
-            arsort($ip);
-            foreach ($ip as $ipa => $count) {
-                echo '
+                    arsort($ip);
+                    foreach ($ip as $ipa => $count) {
+                        echo '
 			<tr>
 				<td>' . $ipa . '</td>
 				<td>' . $count . '</td>
 			</tr>';
+                    }
+                }
             }
         } else {
             // Получаем данные из кэша для всех ключей с префиксом "antiddos:counter:"
@@ -349,8 +368,17 @@ class AntiDDOS
 	<h2>Тип кэша:</h2>
 	<pre>' . htmlspecialchars($this->cacheType) . '</pre>
 	<h2>Лог ошибок:</h2>
-	<pre>' . htmlspecialchars($this->errorLog) . '</pre>
-</body>
+	<pre>' . htmlspecialchars($this->errorLog) . '</pre>';
+
+        $endTime = microtime(true); // Замеряем время окончания выполнения скрипта
+        $executionTime = $endTime - $startTime; // Вычисляем время выполнения
+        $requestsPerSecond = floor(1 / $executionTime); // Вычисляем количество запросов в секунду
+
+        echo "<h2>Производительность:</h2>";
+        echo "<p>Время выполнения: {$executionTime} сек.</p>";
+        echo "<p>Количество запросов в секунду: {$requestsPerSecond}</p>";
+
+        echo '</body>
 </html>';
         exit;
     }
