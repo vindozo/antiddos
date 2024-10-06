@@ -77,13 +77,18 @@ class AntiDDOS
     ];
 
     private $cache; // Кэш (файл, Redis, Memcached)
+    private string $cacheType; // Тип кэша: 'redis', 'memcached', 'file'
+    private string $errorLog = ''; // Переменная для хранения ошибок
 
     /**
      * Конструктор класса.
      *
+     * @param string $cacheType Тип кэша ('redis', 'memcached', 'file' - по умолчанию).
+     *
      * @throws Exception Если папка TEMP_DIR не существует (для файлового кэша).
+     * @throws Exception Если передан некорректный тип кэша.
      */
-    public function __construct()
+    public function __construct(string $cacheType = 'file')
     {
         // Инициализация TEMP_DIR, если не указана явно (для файлового кэша)
         if (self::TEMP_DIR === null) {
@@ -94,7 +99,9 @@ class AntiDDOS
             throw new Exception("Папка " . self::TEMP_DIR . " не существует.");
         }
 
-        // Настройка кэша по приоритетам
+        $this->cacheType = $cacheType;
+
+        // Настройка кэша по приоритетам и типу
         $this->initCache();
 
         // Проверка на доверенный IP
@@ -115,27 +122,49 @@ class AntiDDOS
 
         // Увеличение счетчика для текущего IP
         $this->incrementIPCounter($_SERVER['REMOTE_ADDR']);
+
+        // Если монитор нужен, вызываем monitor()
+        if (isset($_GET['antiddos'])) {
+            $this->monitor();
+            exit;
+        }
     }
 
     /**
-     * Инициализация кэша (файл, Redis, Memcached) по приоритетам.
+     * Инициализация кэша (файл, Redis, Memcached) по приоритетам и типу.
      */
     private function initCache(): void
     {
-        // 1. Пробуем подключиться к Redis
-        if ($this->tryConnect('redis', '127.0.0.1', 6379)) {
-            return;
+        if ($this->cacheType === 'redis') {
+            // 1. Пробуем подключиться к Redis
+            if ($this->tryConnect('redis', '127.0.0.1', 6379)) {
+                $this->errorLog .= "Redis кэш подключен успешно.\n";
+                return;
+            } else {
+                $this->errorLog .= "Ошибка подключения к Redis кэшу.\n";
+            }
         }
 
-        // 2. Пробуем подключиться к Memcached
-        if ($this->tryConnect('memcached', '127.0.0.1', 11211)) {
-            return;
+        if ($this->cacheType === 'memcached') {
+            // 2. Пробуем подключиться к Memcached
+            if ($this->tryConnect('memcached', '127.0.0.1', 11211)) {
+                $this->errorLog .= "Memcached кэш подключен успешно.\n";
+                return;
+            } else {
+                $this->errorLog .= "Ошибка подключения к Memcached кэшу.\n";
+            }
         }
 
-        // 3. Используем файловый кэш по умолчанию
-        $this->cache = new stdClass();
-        $this->cache->cacheDir = self::TEMP_DIR;
-	$this->cleanUpOldFiles();
+        // 3. Используем файловый кэш по умолчанию или если указан тип 'file'
+        if ($this->cacheType === 'file' || $this->cacheType !== 'redis' && $this->cacheType !== 'memcached') {
+            $this->cache = new stdClass();
+            $this->cache->cacheDir = self::TEMP_DIR;
+            $this->errorLog .= "Файловый кэш инициализирован.\n";
+        } else {
+            // Заменяем throw на запись в лог
+            $this->errorLog .= "Некорректный тип кэша: {$this->cacheType}\n";
+            // throw new Exception("Некорректный тип кэша: {$this->cacheType}");
+        }
     }
 
     /**
@@ -262,6 +291,7 @@ class AntiDDOS
 	<head>
 		<title>AntiDDOS</title>
 		<meta charset="utf-8">
+		<meta http-equiv="refresh" content="60">
 	<style>
 		th, td {
 			border: 1px solid #000;
@@ -315,6 +345,11 @@ class AntiDDOS
 
         echo '
 	</table>
+
+	<h2>Тип кэша:</h2>
+	<pre>' . htmlspecialchars($this->cacheType) . '</pre>
+	<h2>Лог ошибок:</h2>
+	<pre>' . htmlspecialchars($this->errorLog) . '</pre>
 </body>
 </html>';
         exit;
@@ -438,9 +473,8 @@ class AntiDDOS
 }
 
 // Теперь запустим модуль в работу
-$antiddos = new AntiDDOS();
+$antiddos = new AntiDDOS('redis'); // Используем Redis
+// $antiddos = new AntiDDOS('memcached'); // Используем Memcached
+// $antiddos = new AntiDDOS('file'); // Используем файловый кэш
+// $antiddos = new AntiDDOS(); // Автодетект, по умолчанию файловый кэш
 
-// Если монитор не нужен, закомментируйте строку ниже
-if (isset($_GET['antiddos'])) {
-    $antiddos->monitor();
-}
