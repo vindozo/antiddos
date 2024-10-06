@@ -501,8 +501,10 @@ class AntiDDOS
 }
 
 // Теперь запустим модуль в работу
-$antiddos = new AntiDDOS('redis'); // Используем Redis
+// $antiddos = new AntiDDOS('redis'); // Используем Redis
 // $antiddos = new AntiDDOS('memcached'); // Используем Memcached
 // $antiddos = new AntiDDOS('file'); // Используем файловый кэш
+$antiddos = new AntiDDOS('file', '/tmp/antiddos'); // Используем файловый кэш
 // $antiddos = new AntiDDOS(); // Автодетект, по умолчанию файловый кэш
 
+// ... (остальной код)
